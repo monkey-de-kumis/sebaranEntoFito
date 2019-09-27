@@ -13,7 +13,13 @@ $res = $pdo->query($sql)->fetch();
 $element = "";
 /** if doesn't same don't render the map **/
 if ($res['COUNT(*)'] == KIMA_BLOCK_NUM) {
-  $datas = array( array("block_id"=>"x","block"=>'A',"luas"=>0,"details"=>array(
+  $datas = array(
+      array(
+          "block_id"=>"x",
+          "block"=>'A',
+          "luas"=>0,
+          "sumCent"=>0,
+          "details"=>array(
     0=>array("varietas_id"=>"x","varietas"=>"Kantor","keterangan"=>"KP KIMA ATAS","jumlah"=>1))
   ));
   /*
@@ -35,8 +41,31 @@ if ($res['COUNT(*)'] == KIMA_BLOCK_NUM) {
     $runn = $pdo->prepare($query);
     $runn->execute([$val["block_id"]]);
     $details = $runn->fetchAll(PDO::FETCH_ASSOC);
+    $blocks[$key]['sumCent']=0;
+    $blocks[$key]['pembagi']=0;
+    foreach($details as $dtlKey => $dtlVal) {
+      $dtlQuery = "SELECT block_ento_fito.id, ento_fito.name as ento_fito,
+      block_ento_fito.block_detail_id, block_ento_fito.persentase,
+      block_ento_fito.kerusakan
+      FROM block_ento_fito JOIN ento_fito
+        ON block_ento_fito.ento_fito_id=ento_fito.id
+      WHERE block_ento_fito.block_detail_id=?";
+      $exc = $pdo->prepare($dtlQuery);
+      $exc->execute([$dtlVal["id"]]);
+      $enfi = $exc->fetchAll(PDO::FETCH_ASSOC);
+      $blocks[$key]['pembagi'] += count($enfi);
+
+      foreach($enfi as $en){
+        $blocks[$key]['sumCent'] +=$en["persentase"];
+      }
+
+      $details[$dtlKey]["ento_fito"]= $enfi;
+    }
+    $blocks[$key]['avgCent']=$blocks[$key]['sumCent']/$blocks[$key]['pembagi'];
     $blocks[$key]['details']=$details;
+
   }
+
   $datas=array_merge($datas,$blocks);
   //echo "<pre>";
   //  print_r($datas);
@@ -159,7 +188,8 @@ if ($res['COUNT(*)'] == KIMA_BLOCK_NUM) {
             display: block;
           }
           .wg-pannel {
-            display:inline-block;
+            display:block;
+            width:100%;
             vertical-align: top;
           }
 
@@ -184,25 +214,47 @@ if ($res['COUNT(*)'] == KIMA_BLOCK_NUM) {
             color: #333;
             white-space: nowrap;
           }
+          .ion-bug:before {
+              content: "\f2be"
+          }
+
 
           .info_panel::first-line {
             font-weight: bold;
           }
+
+          .ion,.ionicons,.ion-bug:before
+          {
+            display: inline-block;
+            font-family: "Ionicons";
+            speak: none;
+            font-style: normal;
+            font-weight: normal;
+            font-variant: normal;
+            text-transform: none;
+            text-rendering: auto;
+            line-height: 1;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale
+        }
         </style>
+
+        <link rel="styesheet" href="https://code.ionicframework.com/ionicons/2.0.1/css/ionicons.min.css">
         <script>
           var populations = <?php echo json_encode($datas); ?>;
           var temp_array= populations.map(function(item){
-            //console.log(item);
-            //alert(item);
-                  return item.luas;
+
+                  return (item.sumCent*100);
               });
+              console.log(temp_array);
               var highest_value = Math.max.apply(Math, temp_array);
+              console.log(highest_value);
 
     $(function() {
 
         for(i = 0; i < populations.length; i++) {
             $('#'+ populations[i].block)
-            .css({'fill': 'rgba(11, 98, 109,' + populations[i].luas/highest_value +')'})
+            .css({'fill': 'rgba(11, 98, 109,' + (populations[i].sumCent*100)/highest_value +')'})
             .data('population', populations[i]);
 
         }
@@ -211,11 +263,41 @@ if ($res['COUNT(*)'] == KIMA_BLOCK_NUM) {
             var population_data=$(this).data('population');
             var varietasString = '';
             var varietasDetail= '';
+
+
+
             $.each(population_data.details,function(k, val){
-               varietasString += 'varietas :'+ val.varietas +' '+val.keterangan+' Jml Pohon :'+val.jumlah+'';
-               varietasDetail +='<div>Varietas : '+val.varietas+' '+val.keterangan+'</div>';
-               varietasDetail +='<div>Jml Pohon :'+val.jumlah+'</div>';
+
+               varietasString +='varietas :'+ val.varietas +'-'+val.keterangan;
+               varietasString +=' Jmlh:'+val.jumlah+'Pohon<';
+               varietasDetail +='<div class="col">';
+               varietasDetail +='<div>varietas : '+val.varietas +'-'
+               +val.keterangan+'</div>';
+               varietasDetail +='<p> Jmlh Pohon : '+val.jumlah+' Pohon</p>';
+
+
+               $.each(val.ento_fito, function(i,ef) {
+                 varietasDetail +='<div class="col">';
+                 varietasDetail +='<div class="card bg-success">';
+                 varietasDetail +='<div class="card-body">';
+                 varietasDetail +='<h5 class="card-title">'+ef.ento_fito+'</h5>';
+                 varietasDetail +='<label>Intensitas :</label>'
+                 varietasDetail +='<p class="card-text">'+ef.persentase+'% -';
+                 varietasDetail +=' '+ef.kerusakan+'</p>';
+                 varietasDetail +='</div>';
+                 varietasDetail +='</div><div class="icon">';
+                 varietasDetail +='<i class="ion ion-person-add"></i></div></div>';
+                 varietasDetail +='</di>';
+
+
+               });
+               varietasDetail +='</div>';
+
             });
+              varietasDetail +='</div>';
+              varietasDetail +='</div>';
+              varietasDetail +='</div>';
+
             $('<div class="info_panel">'+
                 'Block :'+population_data.block.toLocaleString("en-UK") + '</br>' +
                 varietasString + '<br>' +
@@ -224,9 +306,14 @@ if ($res['COUNT(*)'] == KIMA_BLOCK_NUM) {
              )
             .appendTo('body');
 
-            $('.wg-pannel').html('<div>Block '+population_data.block.toLocaleString("en-UK")
-            + '</div><div>Luas Block :' + population_data.luas + 'Ha</div>' +
-            '<div>Population:  </div>' +varietasDetail );
+            $('.wg-pannel').html('<div class="content-wrapper">'
+            +'<div class="content-header"><div class="container-fluid">'
+            +'<div class="row">'
+            +'<div class="col-sm-12">Block :'
+            +population_data.block.toLocaleString("en-UK")
+            + '</div><div class="col-sm-12">Luas :' + population_data.luas
+            + 'Ha</div>'
+            +varietasDetail +'</div></div></div>');
 
         })
         .mouseleave(function () {
@@ -249,6 +336,7 @@ if ($res['COUNT(*)'] == KIMA_BLOCK_NUM) {
           <div class="wg-pannel">
             &nbsp;
           </div>
+
         </div>
       </div>
 <?php endif; ?>
